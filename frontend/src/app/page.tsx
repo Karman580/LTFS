@@ -39,6 +39,7 @@ export default function Home() {
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "An unexpected error occurred";
+      console.log("Triggering error state. Reason:", message, err);
       setError(message);
       setState("error");
     }

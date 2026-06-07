@@ -44,5 +44,16 @@ export async function processAudio(file: File): Promise<ProcessingResponse> {
   }
 
   const data = await response.json();
-  return data as ProcessingResponse;
+  console.log("Raw API Response JSON:", data);
+
+  // If the backend returns a 200 OK and has a status of success OR has the data object, treat it as a success.
+  // This explicitly removes any logic that would throw an error on a successful 200 response with data.
+  if (data.status === "success" || data.data) {
+    // Force the status to be "success" so the UI types match correctly
+    data.status = "success";
+    return data as ProcessingResponse;
+  }
+
+  // Only throw an error if the 200 response was explicitly marked as an error and had no data
+  throw new Error(data.message || "An unexpected error occurred during processing.");
 }
