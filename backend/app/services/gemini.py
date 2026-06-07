@@ -25,9 +25,10 @@ logger = logging.getLogger(__name__)
 class GeminiServiceError(Exception):
     """Raised when Gemini processing fails."""
 
-    def __init__(self, message: str, detail: str | None = None):
+    def __init__(self, message: str, detail: str | None = None, raw_response: str | None = None):
         self.message = message
         self.detail = detail
+        self.raw_response = raw_response
         super().__init__(message)
 
 
@@ -167,6 +168,7 @@ def process_audio(
             raise GeminiServiceError(
                 "Failed to parse Gemini response as JSON",
                 f"JSONDecodeError: {e}",
+                raw_response=raw_response
             )
 
         try:
@@ -175,6 +177,7 @@ def process_audio(
             raise GeminiServiceError(
                 "Gemini response failed Pydantic validation",
                 f"ValidationError: {e}",
+                raw_response=raw_response
             )
 
         return {

@@ -30,3 +30,4 @@ yarn-error.log*
 
 # Mac
 .DS_Store
+firebase-admin-sdk.json

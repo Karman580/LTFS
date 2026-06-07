@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
+    # Integrations
+    cloudinary_url: str = ""
+    firebase_credentials_path: str = ""
+
     max_upload_size_bytes: int = 50 * 1024 * 1024  # 50 MB
 
     allowed_audio_types: list[str] = [
