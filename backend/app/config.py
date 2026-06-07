@@ -14,7 +14,6 @@ class Settings(BaseSettings):
 
     # Integrations
     cloudinary_url: str = ""
-    firebase_service_account_json: str = ""
 
     max_upload_size_bytes: int = 50 * 1024 * 1024  # 50 MB
 
