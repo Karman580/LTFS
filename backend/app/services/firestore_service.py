@@ -9,22 +9,26 @@ logger = logging.getLogger(__name__)
 
 db = None
 
+import json
+
 def get_firestore_client():
     """Initializes and returns the Firestore client."""
     global db
     if db is not None:
         return db
 
-    cred_path = settings.firebase_credentials_path
-    if not cred_path:
-        logger.warning("FIREBASE_CREDENTIALS_PATH not set in environment.")
+    json_str = settings.firebase_service_account_json
+    if not json_str:
+        logger.warning("FIREBASE_SERVICE_ACCOUNT_JSON not set in environment.")
         return None
 
     try:
         if not firebase_admin._apps:
-            cred = credentials.Certificate(cred_path)
+            # Parse the stringified JSON into a dictionary
+            cred_dict = json.loads(json_str)
+            cred = credentials.Certificate(cred_dict)
             firebase_admin.initialize_app(cred)
-            logger.info("Firestore initialized")
+            logger.info("Firestore initialized via JSON environment variable")
         db = firestore.client()
         return db
     except Exception as e:
