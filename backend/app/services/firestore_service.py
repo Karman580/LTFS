@@ -9,51 +9,42 @@ logger = logging.getLogger(__name__)
 
 db = None
 
-def init_firebase():
+def get_firestore_client():
+    """Initializes and returns the Firestore client."""
     global db
-    if not settings.firebase_credentials_path:
+    if db is not None:
+        return db
+
+    cred_path = settings.firebase_credentials_path
+    if not cred_path:
         logger.warning("FIREBASE_CREDENTIALS_PATH not set in environment.")
-        return
+        return None
 
     try:
         if not firebase_admin._apps:
-            cred = credentials.Certificate(settings.firebase_credentials_path)
+            cred = credentials.Certificate(cred_path)
             firebase_admin.initialize_app(cred)
-        
-        # Access the specific LTFS database.
-        db = firestore.client() # Uses default db. To use a named database in Python admin SDK, you'd usually pass it to client() or project. 
-        # But wait, Firestore client handles multiple DBs usually via google-cloud-firestore directly or since firebase-admin 6.2.0:
-        # We can just get the client and if 'LTFS' is a collection or db we can configure it.
-        # Let's try standard client. Note: Firebase default database is (default). If LTFS is the db name:
-        # db = firestore.client(app=firebase_admin.get_app())
-        logger.info("Firebase initialized successfully.")
+            logger.info("Firestore initialized")
+        db = firestore.client()
+        return db
     except Exception as e:
-        logger.error(f"Failed to initialize Firebase: {e}")
-
-init_firebase()
+        logger.error(f"Failed to initialize Firebase Admin SDK: {e}")
+        return None
 
 def save_application_record(record: dict):
     """
-    Saves the processed application record to Firestore.
+    Saves the application tracking record to the 'applications' collection.
     """
-    if not db:
+    client = get_firestore_client()
+    if not client:
         logger.warning("Firestore DB not initialized, skipping save.")
         return
         
     try:
-        # Ensure we write to 'applications' collection
-        # Firebase Admin SDK allows interacting with named databases by instantiating a client directly:
-        # from google.cloud import firestore
-        # client = firestore.Client(project=project_id, database="LTFS")
-        # Since we initialized via firebase_admin, we can just use the collection.
-        # If LTFS is just the project name, db.collection("applications") is sufficient.
-        
         doc_id = record.get("submission_id")
-        if doc_id:
-            db.collection("applications").document(doc_id).set(record)
-        else:
-            db.collection("applications").add(record)
-            
-        logger.info(f"Saved application record {doc_id} to Firestore.")
+        logger.info(f"Writing document to Firestore. Document ID: {doc_id}")
+        doc_ref = client.collection("applications").document(doc_id)
+        doc_ref.set(record)
+        logger.info(f"Firestore write successful for Document ID: {doc_id}")
     except Exception as e:
         logger.error(f"Failed to save record to Firestore: {e}")
