@@ -78,8 +78,23 @@ def process_audio_endpoint(file: UploadFile = File(...)):
         )
 
     except GeminiServiceError as e:
-        logger.error("Gemini processing error: %s — %s", e.message, e.detail)
-        raise HTTPException(status_code=500, detail=generic_error_detail)
+        logger.error("Gemini processing error: %s — %s\nRaw Response/Exception: %s", e.message, e.detail, e.raw_response)
+        
+        # Determine if it's an overload error or a general processing error
+        if e.message == "AI_OVERLOADED":
+            error_response = {
+                "status": "error",
+                "error_type": "AI_OVERLOADED",
+                "message": e.detail or "AI service is experiencing high demand. Please retry in a few minutes."
+            }
+        else:
+            error_response = {
+                "status": "error",
+                "error_type": "PROCESSING_FAILED",
+                "message": e.detail or "The application could not be processed at this time."
+            }
+            
+        raise HTTPException(status_code=503 if e.message == "AI_OVERLOADED" else 500, detail=error_response)
         
     except Exception as e:
         logger.exception("Unexpected error in audio processing endpoint")
