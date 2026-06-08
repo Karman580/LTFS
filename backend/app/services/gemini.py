@@ -54,43 +54,22 @@ def _wait_for_file_active(
     return uploaded_file
 
 
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import Retrying, stop_after_attempt, wait_exponential, retry_if_exception
 
-def _is_transient_error(e: Exception) -> bool:
+def _is_server_error(e: Exception) -> bool:
     error_str = str(e).lower()
     transient_keywords = [
-        "429", "500", "502", "503", "504",
-        "quota", "resource", "exhausted", 
+        "500", "502", "503", "504",
         "unavailable", "overloaded", "demand"
     ]
     return any(keyword in error_str for keyword in transient_keywords)
 
-@retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=2, max=8),
-    reraise=True
-)
-def _generate_with_retry(client, model, uploaded_file):
-    return client.models.generate_content(
-        model=model,
-        contents=[
-            types.Content(
-                parts=[
-                    types.Part.from_uri(
-                        file_uri=uploaded_file.uri,
-                        mime_type=uploaded_file.mime_type,
-                    ),
-                    types.Part.from_text(text=get_user_prompt()),
-                ]
-            )
-        ],
-        config=types.GenerateContentConfig(
-            system_instruction=get_system_prompt(),
-            response_mime_type="application/json",
-            response_schema=ExtractionData,
-            temperature=0.1,
-        ),
-    )
+def _is_quota_error(e: Exception) -> bool:
+    error_str = str(e).lower()
+    quota_keywords = [
+        "429", "quota", "resource exhausted", "exhausted", "rate limit"
+    ]
+    return any(keyword in error_str for keyword in quota_keywords)
 
 def process_audio(
     file_bytes: bytes, filename: str, mime_type: str
@@ -138,23 +117,62 @@ def process_audio(
         used_model = None
         last_error = None
 
-        for model in models_to_try:
+        for idx, model in enumerate(models_to_try):
             logger.info("Attempting extraction with model: %s", model)
             try:
-                response = _generate_with_retry(client, model, uploaded_file)
+                for attempt in Retrying(
+                    stop=stop_after_attempt(3),
+                    wait=wait_exponential(multiplier=1, min=2, max=8),
+                    retry=retry_if_exception(_is_server_error),
+                    reraise=True
+                ):
+                    with attempt:
+                        if attempt.retry_state.attempt_number > 1:
+                            logger.warning(f"Model {model} overloaded. Retrying...")
+                            
+                        response = client.models.generate_content(
+                            model=model,
+                            contents=[
+                                types.Content(
+                                    parts=[
+                                        types.Part.from_uri(
+                                            file_uri=uploaded_file.uri,
+                                            mime_type=uploaded_file.mime_type,
+                                        ),
+                                        types.Part.from_text(text=get_user_prompt()),
+                                    ]
+                                )
+                            ],
+                            config=types.GenerateContentConfig(
+                                system_instruction=get_system_prompt(),
+                                response_mime_type="application/json",
+                                response_schema=ExtractionData,
+                                temperature=0.1,
+                            ),
+                        )
+                
                 used_model = model
+                logger.info(f"Extraction successful using model: {model}")
                 break  # Success, exit fallback loop
                 
             except Exception as e:
-                # Check for transient errors (429, 503, etc.)
-                if _is_transient_error(e):
-                    logger.warning(f"Model {model} overloaded or unavailable. Trying next fallback. Error: {e}")
+                # If we get here, either we exhausted the 3 retries for server errors, 
+                # or we hit a quota error (which is never retried), or a non-transient error.
+                if _is_quota_error(e):
+                    logger.warning(f"Model {model} quota exhausted. Switching to fallback.")
                     last_error = e
-                    continue
+                elif _is_server_error(e):
+                    logger.warning(f"Model {model} overloaded (max retries reached). Switching to fallback.")
+                    last_error = e
                 else:
-                    # If it's a non-transient error (e.g., 400 Bad Request), raise immediately
+                    # Non-transient error (e.g., 400 Bad Request), raise immediately
                     logger.error(f"Non-transient error encountered with {model}: {e}")
                     raise
+            
+            # Announce the next model if we haven't reached the end
+            if idx + 1 < len(models_to_try):
+                next_model = models_to_try[idx + 1]
+                logger.info(f"Using fallback model: {next_model}")
 
         if not response:
             # All models failed due to quota or other errors
