@@ -87,9 +87,9 @@ def process_audio(
     
     # Primary model and fallbacks per requirements
     models_to_try = [
-        "gemini-2.5-flash",
-        "gemini-2.0-flash",
-        "gemini-2.0-flash-lite"
+        "gemini-3.1-flash-lite",
+        "gemini-3.5-flash",
+        "gemini-2.5-flash"
     ]
 
     # ── Save audio to temp file for upload ────────────────────────────
